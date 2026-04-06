@@ -59,7 +59,7 @@ RULES:
     try:
         response = ai_client.chat.completions.create(
             model=CHAT_MODEL,
-            max_tokens=3072,
+            max_completion_tokens=3072,
             messages=[
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_content},
@@ -152,7 +152,7 @@ _You should see:_ [describe healthy output]
     try:
         response = ai_client.chat.completions.create(
             model=CHAT_MODEL,
-            max_tokens=4096,
+            max_completion_tokens=4096,
             messages=[
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": content_parts},
@@ -195,7 +195,7 @@ RULES:
     try:
         response = ai_client.chat.completions.create(
             model=CHAT_MODEL,
-            max_tokens=2048,
+            max_completion_tokens=2048,
             messages=msgs,
         )
         raw_answer = response.choices[0].message.content
@@ -241,7 +241,7 @@ RULES:
     try:
         response = ai_client.chat.completions.create(
             model=CHAT_MODEL,
-            max_tokens=2048,
+            max_completion_tokens=2048,
             messages=msgs,
             temperature=0.4,
         )
