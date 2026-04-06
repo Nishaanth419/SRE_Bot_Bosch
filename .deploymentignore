@@ -1,0 +1,27 @@
+# Excluded from Azure App Service zip/Kudu deployment
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+
+# Virtual environments
+.venv/
+.venv-1/
+venv/
+env/
+
+# Tests
+tests/
+
+# Editor / OS
+.vscode/
+.idea/
+*.DS_Store
+
+# Logs / reports
+*.log
+*.html
+chroma_store*/
+data/
+processed/

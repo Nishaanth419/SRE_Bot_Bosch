@@ -1,0 +1,14 @@
+__pycache__/
+*.pyc
+*.pyo
+.env
+*.env
+.venv/
+.venv-1/
+venv/
+*.md
+chroma_store*/
+data/
+processed/
+tests/
+.vscode/

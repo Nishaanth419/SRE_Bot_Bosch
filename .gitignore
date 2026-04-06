@@ -1,0 +1,35 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.egg-info/
+dist/
+build/
+
+# Virtual environments
+.venv/
+.venv-1/
+venv/
+env/
+
+# Environment / secrets
+.env
+*.env
+Azure.env
+
+# Tests (not needed in App Service)
+tests/
+
+# Editor / OS
+.vscode/
+.idea/
+*.DS_Store
+Thumbs.db
+
+# Logs / reports
+*.log
+*.html
+chroma_store*/
+data/
+processed/

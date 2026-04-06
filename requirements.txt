@@ -1,0 +1,7 @@
+flask
+requests
+azure-search-documents
+azure-identity
+openai
+python-dotenv
+gunicorn
