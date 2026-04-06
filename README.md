@@ -4,11 +4,11 @@
 ![Python](https://img.shields.io/badge/Python-3.10%2B-3776AB?style=flat&logo=python)
 ![Teams](https://img.shields.io/badge/Microsoft_Teams-Integration-6264A7?style=flat&logo=microsoftteams)
 ![Azure AI Search](https://img.shields.io/badge/Azure_AI_Search-RAG_Memory-00A1F1?style=flat&logo=microsoftazure)
-![RBAC](https://img.shields.io/badge/Auth-RBAC_%2F_Managed_Identity-22c55e?style=flat&logo=microsoftazure)
+![API Key](https://img.shields.io/badge/Auth-API_Key-22c55e?style=flat&logo=microsoftazure)
 
 An enterprise-grade **Automated Incident Response System** designed for Azure Kubernetes Service (AKS). 
 
-This bot acts as a "Virtual SRE." It receives incident messages directly from **Power Automate** through an HTTP request, analyzes logs and screenshots using **Azure OpenAI (gpt-4.1-mini)**, looks up similar past incidents in **Azure AI Search**, and posts a strictly formatted, actionable Runbook directly to **Microsoft Teams**. All Azure resources are accessed via **RBAC / Managed Identity** — no API keys stored in config.
+This bot acts as a "Virtual SRE." It receives incident messages directly from **Power Automate** through an HTTP request, analyzes logs and screenshots using **Azure OpenAI (gpt-4.1-mini)**, looks up similar past incidents in **Azure AI Search**, and posts a strictly formatted, actionable Runbook directly to **Microsoft Teams**. Azure resources are authenticated with **API keys** stored in `Azure.env`.
 
 > **Important:** the deployment-ready application lives in [Deploy](Deploy). Use [Deploy](Deploy) as the working folder for running the bot, tests, Docker packaging, and Azure deployment.
 
@@ -19,7 +19,7 @@ This bot acts as a "Virtual SRE." It receives incident messages directly from **
 * **🌐 HTTP Triggered:** Automatically activates when Power Automate sends a direct HTTP request to the bot.
 * **🧠 AI Root Cause Analysis:** Uses **Azure OpenAI (gpt-4.1-mini)** to translate complex Kubernetes logs (e.g., CrashLoopBackOff, OOMKilled) into plain English with step-by-step runbooks.
 * **🛡️ Azure AI Search RAG Memory:** Uses Azure AI Search vector search plus keyword overlap to identify similar incidents and reuse historical fixes.
-* **🔐 RBAC / Managed Identity Auth:** Both Azure OpenAI and Azure AI Search are accessed via `DefaultAzureCredential` — no API keys in config. On App Service, Managed Identity is used automatically; locally, `az login` is used.
+* **� API Key Auth:** Both Azure OpenAI and Azure AI Search are authenticated with API keys stored in `Azure.env` (`AZURE_OPENAI_API_KEY` and `AZURE_SEARCH_API_KEY`).
 * **💬 Conversational Context:** Engineers can reply to the bot with follow-up questions. The bot recalls the specific error and previous chat history for that exact thread.
 * **💰 Token Optimizations:** Chat history is trimmed to the last 6 turns, simple greetings are answered without an AI call, follow-up saves skip re-embedding when the log is unchanged, and RAG context is truncated before injection.
 * **🌗 Smart Formatting:** Generates distinct, copy-pasteable `kubectl` commands with syntax highlighting (HTML/Markdown) for Teams.
@@ -93,10 +93,10 @@ sequenceDiagram
     alt Incident path
         Bot->>Search: Vector + keyword similarity lookup
         Search-->>Bot: Similar incident or no match
-      Bot->>OAI: Send prompt + optional RAG context (RBAC token)
+      Bot->>OAI: Send prompt + optional RAG context (API key)
       OAI-->>Bot: Generated runbook
     else Normal chat path
-      Bot->>OAI: Send conversational prompt (RBAC token)
+      Bot->>OAI: Send conversational prompt (API key)
       OAI-->>Bot: Generated answer
     end
     Bot->>Search: Save thread (skip re-embed on follow-ups)
@@ -196,7 +196,7 @@ This reduces false positives from noisy Kubernetes logs and avoids reusing unrel
 
 ## ☁️ Azure OpenAI Model Layer
 
-The generation layer uses **Azure OpenAI (gpt-4.1-mini)** accessed via RBAC.
+The generation layer uses **Azure OpenAI (gpt-4.1-mini)** authenticated with an API key.
 
 ### Models used
 
@@ -205,11 +205,11 @@ The generation layer uses **Azure OpenAI (gpt-4.1-mini)** accessed via RBAC.
 
 ### Authentication
 
-Both models are called using `DefaultAzureCredential` — no API keys required:
-- On **Azure App Service**: Managed Identity is used automatically.
-- **Locally**: your `az login` session is used.
+Both Azure OpenAI and Azure AI Search authenticate with **API keys** set in `Azure.env`:
+- `AZURE_OPENAI_API_KEY` — key for the Azure OpenAI resource.
+- `AZURE_SEARCH_API_KEY` — admin or query key for the Azure AI Search resource.
 
-Required IAM role on the Azure OpenAI resource: **Cognitive Services OpenAI User**
+No Managed Identity or `az login` is required.
 
 ### How it fits into the solution
 
@@ -224,8 +224,8 @@ Required IAM role on the Azure OpenAI resource: **Cognitive Services OpenAI User
 ### Why this combination works
 
 - **Azure AI Search** handles retrieval and historical memory.
-- **Azure OpenAI** provides both chat generation and embeddings from a single RBAC-authenticated resource.
-- **RBAC auth** removes secret rotation risk — no API keys in environment files.
+- **Azure OpenAI** provides both chat generation and embeddings from a single API-key-authenticated resource.
+- Both services are configured through a single `Azure.env` file alongside the other runtime variables.
 
 ---
 ## ⚙️ Code Logic & Inner Workings
@@ -363,10 +363,8 @@ For developers and team members reviewing the codebase, here is a breakdown of w
 * **Python:** 3.10+
 
 ### 2. Infrastructure
-* **Azure OpenAI:** Required for chat generation (`gpt-4.1-mini`) and embeddings (`text-embedding-3-small`).
-* **Azure AI Search:** Required for incident memory and RAG retrieval.
-* **IAM role on Azure OpenAI:** Assign `Cognitive Services OpenAI User` to the App Service Managed Identity (or your local user for dev).
-* **IAM role on Azure AI Search:** Assign `Search Index Data Contributor` to the same identity.
+* **Azure OpenAI:** Required for chat generation (`gpt-4.1-mini`) and embeddings (`text-embedding-3-small`). Copy the API key from **Azure Portal → Azure OpenAI resource → Keys and Endpoint**.
+* **Azure AI Search:** Required for incident memory and RAG retrieval. Copy the admin key from **Azure Portal → Search resource → Keys**.
 * **Microsoft Teams + Power Automate:** A configured flow that collects Teams message details and sends them directly to the bot over HTTP.
 
 ---
@@ -392,21 +390,23 @@ pip install -r requirements.txt
 Create an `Azure.env` file in the `Deploy/` directory:
 
 ```ini
-# Azure OpenAI — no API key needed (RBAC / Managed Identity)
+# Azure OpenAI
 AZURE_OPENAI_ENDPOINT="https://<your-resource>.openai.azure.com/"
 AZURE_OPENAI_API_VERSION="2024-12-01-preview"
+AZURE_OPENAI_API_KEY="<your-azure-openai-api-key>"
 CHAT_MODEL="gpt-4.1-mini"
 EMBED_MODEL="text-embedding-3-small"
 
-# Azure AI Search — no API key needed (RBAC / Managed Identity)
+# Azure AI Search
 AZURE_SEARCH_ENDPOINT="https://<your-search-resource>.search.windows.net"
 AZURE_SEARCH_INDEX="sre-incidents"
+AZURE_SEARCH_API_KEY="<your-azure-search-api-key>"
 
 # Teams Delivery
 TEAMS_WEBHOOK_URL="<YOUR_POWER_AUTOMATE_WEBHOOK_URL>"
 ```
 
-> **Note:** No API keys are stored. Azure OpenAI and Azure AI Search both authenticate via `DefaultAzureCredential`. Run `az login` for local development, or assign a Managed Identity on App Service.
+> **Note:** API keys are loaded from `Azure.env` at startup. Keep this file out of source control — add it to `.gitignore`.
 
 ## 🚀 Usage
 
@@ -447,7 +447,7 @@ aks-sre-bot/
 │   ├── requirements.txt        # 📦 Python dependencies
 │   ├── Azure.env               # 🔑 Runtime secrets and configuration
 │   ├── Dockerfile              # 🐳 Container build definition
-│   ├── startup.sh              # ▶️ Container startup script
+│   ├── startup.sh              # ▶️ Gunicorn startup script (sets --chdir /home/site/wwwroot)
 │   └── tests/                  # 🧪 Test scripts and HTML report generator
 │
 └── README.md                   # 📄 High-level project documentation

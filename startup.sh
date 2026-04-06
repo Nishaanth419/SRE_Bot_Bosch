@@ -8,4 +8,5 @@ exec gunicorn \
   --timeout=120 \
   --access-logfile=- \
   --error-logfile=- \
+  --chdir /home/site/wwwroot \
   app:app
