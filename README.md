@@ -1,14 +1,14 @@
 # 🤖 AKS SRE Bot — AI Incident Commander
 
-![Azure AI Foundry](https://img.shields.io/badge/Azure_AI_Foundry-Model_Hosting-0078D4?style=flat&logo=microsoftazure)
+![Azure OpenAI](https://img.shields.io/badge/Azure_OpenAI-gpt--4.1--mini-0078D4?style=flat&logo=microsoftazure)
 ![Python](https://img.shields.io/badge/Python-3.10%2B-3776AB?style=flat&logo=python)
 ![Teams](https://img.shields.io/badge/Microsoft_Teams-Integration-6264A7?style=flat&logo=microsoftteams)
 ![Azure AI Search](https://img.shields.io/badge/Azure_AI_Search-RAG_Memory-00A1F1?style=flat&logo=microsoftazure)
-![Claude](https://img.shields.io/badge/Claude-Opus_4.6-1f2937?style=flat)
+![RBAC](https://img.shields.io/badge/Auth-RBAC_%2F_Managed_Identity-22c55e?style=flat&logo=microsoftazure)
 
 An enterprise-grade **Automated Incident Response System** designed for Azure Kubernetes Service (AKS). 
 
-This bot acts as a "Virtual SRE." It receives incident messages directly from **Power Automate** through an HTTP request, analyzes logs and screenshots using **Claude Opus 4.6**, looks up similar past incidents in **Azure AI Search**, and posts a strictly formatted, actionable Runbook directly to **Microsoft Teams**. The model layer can be hosted through **Azure AI Foundry** while Azure AI Search provides the retrieval layer for RAG.
+This bot acts as a "Virtual SRE." It receives incident messages directly from **Power Automate** through an HTTP request, analyzes logs and screenshots using **Azure OpenAI (gpt-4.1-mini)**, looks up similar past incidents in **Azure AI Search**, and posts a strictly formatted, actionable Runbook directly to **Microsoft Teams**. All Azure resources are accessed via **RBAC / Managed Identity** — no API keys stored in config.
 
 > **Important:** the deployment-ready application lives in [Deploy](Deploy). Use [Deploy](Deploy) as the working folder for running the bot, tests, Docker packaging, and Azure deployment.
 
@@ -17,14 +17,15 @@ This bot acts as a "Virtual SRE." It receives incident messages directly from **
 ## 🚀 Key Features
 
 * **🌐 HTTP Triggered:** Automatically activates when Power Automate sends a direct HTTP request to the bot.
-* **🧠 AI Root Cause Analysis:** Uses **Claude Opus 4.6** to translate complex Kubernetes logs (e.g., CrashLoopBackOff, OOMKilled) into plain English.
+* **🧠 AI Root Cause Analysis:** Uses **Azure OpenAI (gpt-4.1-mini)** to translate complex Kubernetes logs (e.g., CrashLoopBackOff, OOMKilled) into plain English with step-by-step runbooks.
 * **🛡️ Azure AI Search RAG Memory:** Uses Azure AI Search vector search plus keyword overlap to identify similar incidents and reuse historical fixes.
-* **☁️ Azure AI Foundry Ready:** The solution can use Azure AI Foundry as the hosted model access layer for Claude-based generation.
+* **🔐 RBAC / Managed Identity Auth:** Both Azure OpenAI and Azure AI Search are accessed via `DefaultAzureCredential` — no API keys in config. On App Service, Managed Identity is used automatically; locally, `az login` is used.
 * **💬 Conversational Context:** Engineers can reply to the bot with follow-up questions. The bot recalls the specific error and previous chat history for that exact thread.
+* **💰 Token Optimizations:** Chat history is trimmed to the last 6 turns, simple greetings are answered without an AI call, follow-up saves skip re-embedding when the log is unchanged, and RAG context is truncated before injection.
 * **🌗 Smart Formatting:** Generates distinct, copy-pasteable `kubectl` commands with syntax highlighting (HTML/Markdown) for Teams.
 * **🖼️ Screenshot-Aware Analysis:** Supports image attachments passed from Power Automate into the multimodal AI prompt.
-* **📊 Response Evaluation:** Measures response quality per answer.
-* **🌐 Live Tech Stack Grounding:** Auto-detects version/release questions about team tools (Argo, Istio, Prometheus, Flux, etc.) and fetches the real latest release from GitHub before calling Claude — overcoming the model's training cutoff.
+* **📊 Response Evaluation:** Measures response quality per answer across 8 dimensions (structure, actionability, relevance, conciseness, code blocks, verification, latency).
+* **🌐 Live Tech Stack Grounding:** Auto-detects version/release questions about team tools (Argo, Istio, Prometheus, Flux, etc.) and fetches the real latest release from GitHub — overcoming the model's training cutoff.
 * **🗂️ Modular Codebase:** Logic is split across focused modules (`keywords.py`, `database.py`, `ai_handlers.py`, `orchestrator.py`, etc.) for easy navigation and maintenance.
 
 ---
@@ -32,7 +33,7 @@ This bot acts as a "Virtual SRE." It receives incident messages directly from **
 
 ## 🏗️ Precise System Architecture
 
-This diagram illustrates the updated end-to-end flow where **Power Automate sends a direct HTTP request** to the bot, **Azure AI Foundry hosts the generation model**, and **Azure AI Search** acts as the incident memory layer.
+This diagram illustrates the end-to-end flow where **Power Automate sends a direct HTTP request** to the bot, **Azure OpenAI (gpt-4.1-mini)** handles generation, and **Azure AI Search** acts as the incident memory layer.
 
 ```mermaid
 flowchart TD
@@ -64,7 +65,7 @@ flowchart TD
   P --> R
   Q --> R
 
-  P --> U["Azure AI Foundry / Claude Opus 4.6"]
+  P --> U["Azure OpenAI — gpt-4.1-mini"]
   Q --> U
   K --> U
   L --> U
@@ -81,28 +82,24 @@ sequenceDiagram
     participant PA as Power Automate
     participant Bot as Flask Bot
     participant Search as Azure AI Search
-    participant Foundry as Azure AI Foundry
-    participant AI as Claude Opus 4.6
+    participant OAI as Azure OpenAI (gpt-4.1-mini)
 
     Teams->>PA: Message or reply with keyword
     PA->>PA: Extract message details and attachments
     PA->>Bot: POST /api/teams
     Bot->>Bot: Classify reply vs new message
+    Bot->>Bot: Greeting shortcut? → canned reply (no AI call)
     Bot->>Bot: Classify incident vs normal chat
     alt Incident path
         Bot->>Search: Vector + keyword similarity lookup
         Search-->>Bot: Similar incident or no match
-      Bot->>Foundry: Send prompt and optional RAG context
-      Foundry->>AI: Run Claude Opus 4.6
-      AI-->>Foundry: Generated runbook
-      Foundry-->>Bot: Return model response
+      Bot->>OAI: Send prompt + optional RAG context (RBAC token)
+      OAI-->>Bot: Generated runbook
     else Normal chat path
-      Bot->>Foundry: Send conversational prompt
-      Foundry->>AI: Run Claude Opus 4.6
-      AI-->>Foundry: Generated answer
-      Foundry-->>Bot: Return model response
+      Bot->>OAI: Send conversational prompt (RBAC token)
+      OAI-->>Bot: Generated answer
     end
-    Bot->>Search: Save thread context and history
+    Bot->>Search: Save thread (skip re-embed on follow-ups)
     Bot->>PA: Response payload for Teams posting
     PA->>Teams: Thread reply
 ```
@@ -197,29 +194,38 @@ This reduces false positives from noisy Kubernetes logs and avoids reusing unrel
 
 ---
 
-## ☁️ Azure AI Foundry Model Layer
+## ☁️ Azure OpenAI Model Layer
 
-The generation layer is designed around **Claude Opus 4.6**.
+The generation layer uses **Azure OpenAI (gpt-4.1-mini)** accessed via RBAC.
 
-### Model used
+### Models used
 
-- **Primary generation model:** Claude Opus 4.6
+- **Chat / generation model:** `gpt-4.1-mini` (configurable via `CHAT_MODEL` env var)
+- **Embedding model:** `text-embedding-3-small` (configurable via `EMBED_MODEL` env var)
+
+### Authentication
+
+Both models are called using `DefaultAzureCredential` — no API keys required:
+- On **Azure App Service**: Managed Identity is used automatically.
+- **Locally**: your `az login` session is used.
+
+Required IAM role on the Azure OpenAI resource: **Cognitive Services OpenAI User**
 
 ### How it fits into the solution
 
 - Power Automate sends the incident payload to the bot.
 - The bot retrieves possible context from Azure AI Search.
 - The bot sends either:
-  - a runbook-generation prompt, or
-  - a conversational follow-up prompt
-  to the model layer.
-- Claude Opus 4.6 generates the final answer.
+  - a runbook-generation prompt (up to 4096 output tokens), or
+  - a follow-up / general chat prompt (capped at 2048 output tokens)
+  to the Azure OpenAI endpoint.
+- gpt-4.1-mini generates the final answer.
 
 ### Why this combination works
 
 - **Azure AI Search** handles retrieval and historical memory.
-- **Azure AI Foundry** provides the hosted AI platform layer.
-- **Claude Opus 4.6** handles deep reasoning and high-quality runbook generation.
+- **Azure OpenAI** provides both chat generation and embeddings from a single RBAC-authenticated resource.
+- **RBAC auth** removes secret rotation risk — no API keys in environment files.
 
 ---
 ## ⚙️ Code Logic & Inner Workings
@@ -259,9 +265,9 @@ For developers and team members reviewing the codebase, here is a breakdown of w
 * **`get_thread_context(thread_id)`**
   * **Why:** Allows the bot to maintain conversational memory for follow-up questions.
   * **How:** Fetches the thread document from Azure AI Search using the thread id as the document key.
-* **`save_or_update_incident(thread_id, subject, log, diagnosis, chat_history)`**
+* **`save_or_update_incident(thread_id, subject, log, diagnosis, chat_history, skip_embedding=False)`**
   * **Why:** Saves the state of an incident so it can be recalled later or searched.
-  * **How:** Extracts keywords, creates an embedding, and uploads a document to Azure AI Search with the thread id as the key.
+  * **How:** Extracts keywords, creates an embedding, and uploads a document to Azure AI Search with the thread id as the key. Pass `skip_embedding=True` on follow-up saves where the log has not changed — this skips a redundant embedding API call.
 * **`find_similar_incident(log_text)`**
   * **Why:** Prevents the AI from analyzing the exact same error twice.
   * **How:** Performs vector search against Azure AI Search and combines that with Jaccard keyword overlap to determine whether a historical incident is safe to reuse.
@@ -269,32 +275,35 @@ For developers and team members reviewing the codebase, here is a breakdown of w
 ### 3. Keyword Extraction & Classification — `keywords.py`
 * **`extract_keywords(text)`**
   * **Why:** Improves matching quality for noisy AKS logs.
-  * **How:** Keeps cluster-specific terms and filters common infrastructure noise before generating the embedding.
+  * **How:** Matches cluster-specific terms via a pre-compiled word-boundary regex (no false positives), then tokenises and filters noise tokens (timestamps, hex hashes, IPs, version strings, VMSS IDs, stop words). Results are `lru_cache`-d for performance.
 * **`is_incident_message(text)`**
   * **Why:** Decides whether to run the runbook path or the general chat path.
-  * **How:** Scores the message against incident patterns, log patterns, and cluster vocabulary.
+  * **How:** Scores the message against incident patterns, log patterns, and cluster vocabulary using pre-compiled regexes. Question words apply a penalty to prevent misrouting questions like "how does argo work?" as incidents.
 * **`is_history_request(text)`**
   * **Why:** Detects when the user asks about previous incidents.
-  * **How:** Matches question phrasing against history-intent patterns.
+  * **How:** Matches question phrasing against history-intent patterns using pre-compiled regexes.
+* **`greeting_response(text)`**
+  * **Why:** Avoids spending an AI call on simple greetings ("hi", "thanks", "help").
+  * **How:** Matches against a compiled greeting regex and returns a canned response. Returns `None` for anything else so the normal flow continues.
 
 ### 4. AI Processing — `ai_handlers.py`
 * **`ask_ai_incident(user_log)`**
   * **Why:** Generates the initial, highly-formatted Runbook.
-  * **How:** Uses a strict prompt to produce a runbook-style answer with root cause, resolution steps, and verification commands. If a similar incident is found, it also injects that historical context before sending to **Claude Opus 4.6**.
+  * **How:** Uses a strict prompt to produce a runbook-style answer with root cause, resolution steps, and verification commands. RAG memory fields are truncated to 800 chars each before injection to control token usage. Calls `ai_client.chat.completions.create()` via Azure OpenAI with `max_tokens=4096`.
 * **`ask_ai_followup(user_question, log_context, chat_history_list)`**
   * **Why:** Handles conversational Q&A inside an incident thread.
-  * **How:** Injects the original log and past conversation into the prompt context.
+  * **How:** Trims chat history to the last 6 turns (`trim_chat_history`), truncates the original log to 2000 chars in the system message, and uses `max_tokens=2048` — follow-ups are shorter than initial diagnoses.
 * **`ask_ai_general(user_message, ...)`**
   * **Why:** Handles normal support questions that are not incidents.
-  * **How:** Uses a lighter conversational system prompt and injects live GitHub release data when the question is about a known team tool.
+  * **How:** Uses a lighter conversational system prompt, trims chat history to the last 6 turns, and injects live GitHub release data when the question is about a known team tool.
 * **`ask_ai_history_summary(query_text, matches)`**
   * **Why:** Summarises patterns across multiple matched past incidents.
-  * **How:** Builds a structured context block from matched records and asks Claude to identify themes and recommend next steps.
+  * **How:** Builds a structured context block from matched records and asks the model to identify themes and recommend next steps.
 
 ### 5. Live Tech Stack Grounding — `github_grounding.py`
 * **`_build_release_context(user_message)`**
-  * **Why:** Overcomes Claude's training-data cutoff for version/release questions.
-  * **How:** Detects version-related keywords and a known tool name, fetches the real latest release from the GitHub API, and injects the result into Claude's system prompt as authoritative data.
+  * **Why:** Overcomes the model's training-data cutoff for version/release questions.
+  * **How:** Detects version-related keywords and a known tool name, fetches the real latest release from the GitHub API, and injects the result into the system prompt as authoritative data.
 * **`fetch_github_latest_release(repo_slug)`**
   * **Why:** Gets live release data directly from GitHub.
   * **How:** Calls the public `releases/latest` API with a 1-hour in-process TTL cache to respect rate limits.
@@ -306,8 +315,9 @@ For developers and team members reviewing the codebase, here is a breakdown of w
 
 ### 7. Utilities — `utils.py`
 * HTML stripping and escaping for Teams markup cleanup.
-* Base64 image conversion to Claude vision content blocks.
+* Base64 image conversion to OpenAI vision content blocks (`image_url` format).
 * Chat history parsing and appending helpers.
+* **`trim_chat_history(messages, max_turns=6)`** — trims history to the last N user/assistant pairs before each AI call to limit token usage.
 
 ### 8. Response Evaluation — `response_metrics.py`
 * **`evaluate_response(...)` and `evaluate_followup(...)`**
@@ -353,10 +363,10 @@ For developers and team members reviewing the codebase, here is a breakdown of w
 * **Python:** 3.10+
 
 ### 2. Infrastructure
+* **Azure OpenAI:** Required for chat generation (`gpt-4.1-mini`) and embeddings (`text-embedding-3-small`).
 * **Azure AI Search:** Required for incident memory and RAG retrieval.
-* **Azure AI Foundry:** Recommended as the hosted platform layer for model access.
-* **Claude Opus 4.6:** Used for incident analysis, follow-up answers, and normal chat.
-* **Embedding model access:** Required for vector generation used by Azure AI Search.
+* **IAM role on Azure OpenAI:** Assign `Cognitive Services OpenAI User` to the App Service Managed Identity (or your local user for dev).
+* **IAM role on Azure AI Search:** Assign `Search Index Data Contributor` to the same identity.
 * **Microsoft Teams + Power Automate:** A configured flow that collects Teams message details and sends them directly to the bot over HTTP.
 
 ---
@@ -379,23 +389,24 @@ pip install -r requirements.txt
 ```
 
 **3. Configure Environment Variables:**
-Create an `Azure.env` file in the root directory:
+Create an `Azure.env` file in the `Deploy/` directory:
 
 ```ini
-# Embedding and model configuration
-AZURE_OPENAI_ENDPOINT="[https://your-resource.openai.azure.com/](https://your-resource.openai.azure.com/)"
-AZURE_OPENAI_KEY="<YOUR_KEY>"
+# Azure OpenAI — no API key needed (RBAC / Managed Identity)
+AZURE_OPENAI_ENDPOINT="https://<your-resource>.openai.azure.com/"
 AZURE_OPENAI_API_VERSION="2024-12-01-preview"
-CLAUDE_MODEL="claude-opus-4-6"
-EMBED_MODEL="<YOUR_EMBEDDING_MODEL>"
+CHAT_MODEL="gpt-4.1-mini"
+EMBED_MODEL="text-embedding-3-small"
 
-# Claude / Foundry access
-ANTHROPIC_ENDPOINT="<YOUR_ANTHROPIC_OR_FOUNDRY_ENDPOINT>"
-ANTHROPIC_API_KEY="<YOUR_API_KEY>"
+# Azure AI Search — no API key needed (RBAC / Managed Identity)
+AZURE_SEARCH_ENDPOINT="https://<your-search-resource>.search.windows.net"
+AZURE_SEARCH_INDEX="sre-incidents"
 
 # Teams Delivery
-TEAMS_WEBHOOK_URL="<YOUR_TEAMS_WEBHOOK_URL>"
+TEAMS_WEBHOOK_URL="<YOUR_POWER_AUTOMATE_WEBHOOK_URL>"
 ```
+
+> **Note:** No API keys are stored. Azure OpenAI and Azure AI Search both authenticate via `DefaultAzureCredential`. Run `az login` for local development, or assign a Managed Identity on App Service.
 
 ## 🚀 Usage
 
@@ -424,7 +435,7 @@ aks-sre-bot/
 ├── Deploy/
 │   ├── app.py                  # 🌐 Flask entry point — webhook routes only
 │   ├── orchestrator.py         # 🚀 Message routing and flow control
-│   ├── ai_handlers.py          # 🧠 All Claude AI call functions
+│   ├── ai_handlers.py          # 🧠 All Azure OpenAI call functions
 │   ├── database.py             # 💾 Azure AI Search: get / save / find / search
 │   ├── keywords.py             # 🔑 Keyword extraction and message classifiers
 │   ├── github_grounding.py     # 🌐 Live GitHub release fetcher (tech stack grounding)
