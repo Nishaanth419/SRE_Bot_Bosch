@@ -14,6 +14,7 @@ from ai_handlers import (
 )
 from teams_poster import post_incident_card, post_chat_card
 from response_metrics import evaluate_response, evaluate_followup, ResponseTimer
+from confluence_context import get_last_sources
 
 # ---------------------------------------------------------
 # 🚀 CORE MESSAGE ORCHESTRATION
@@ -59,7 +60,11 @@ def process_teams_message(tid, is_reply, subject, body, base64_images=None):
                 "for that topic. This looks like a new issue or the stored history is too limited."
             )
 
-        post_chat_card(tid, body, answer)
+        post_chat_card(
+            tid, body, answer,
+            kb_sources=get_last_sources(),
+            note="📌 <b>Note:</b> This is a historical summary — no need to reply to this message.",
+        )
 
         # Persist only when this is a reply in an existing thread
         if is_reply:
@@ -107,7 +112,7 @@ def process_teams_message(tid, is_reply, subject, body, base64_images=None):
             for m in report.metrics:
                 print(f"   ├─ {m.name}: {m.score:.2f} – {m.explanation}")
 
-            post_chat_card(tid, body, answer)
+            post_chat_card(tid, body, answer, kb_sources=get_last_sources())
 
             new_history = append_chat_history(context.get("chat_history", "[]"), body, answer)
             save_or_update_incident(
@@ -144,7 +149,7 @@ def process_teams_message(tid, is_reply, subject, body, base64_images=None):
                 print(f"   └─ Recommendations: {'; '.join(report.recommendations)}")
 
             save_chat = append_chat_history("[]", body, diag)
-            post_incident_card(tid, subject, body, diag, is_cached=is_cached)
+            post_incident_card(tid, subject, body, diag, is_cached=is_cached, kb_sources=get_last_sources())
             save_or_update_incident(tid, subject, body, diag, save_chat)
 
         else:
@@ -158,6 +163,6 @@ def process_teams_message(tid, is_reply, subject, body, base64_images=None):
             for m in report.metrics:
                 print(f"   ├─ {m.name}: {m.score:.2f} – {m.explanation}")
 
-            post_chat_card(tid, body, answer)
+            post_chat_card(tid, body, answer, kb_sources=get_last_sources())
             save_chat = append_chat_history("[]", body, answer)
             save_or_update_incident(tid, subject or "General Chat", body, answer, save_chat)

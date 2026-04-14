@@ -40,7 +40,7 @@ load_dotenv(os.path.join(_root, "Azure.env"))
 
 from azure.search.documents import SearchClient
 from azure.core.credentials import AzureKeyCredential
-from azure_config import get_embedding, ai_client, CHAT_MODEL
+from azure_config import get_embedding
 
 # ---------------------------------------------------------
 #   CONFIGURATION
@@ -140,49 +140,18 @@ def _html_to_plain(html: str) -> str:
     return soup.get_text(separator=" ", strip=True)
 
 
-def _summarise_page(page_title: str, content: str) -> str:
-    """Use Azure OpenAI to summarise a Confluence page into ~500 chars.
-    The summary is what gets stored and injected into AI prompts.
-    The full content is still used for the embedding vector."""
-    prompt = (
-        f"Summarise the following Confluence page titled '{page_title}' "
-        f"into 3-5 concise sentences. Focus on: what it is, what problem it solves, "
-        f"key steps or commands, and any important warnings. "
-        f"Output plain text only, no markdown, no headers.\n\n"
-        f"{content[:3000]}"
-    )
-    try:
-        resp = ai_client.chat.completions.create(
-            model=CHAT_MODEL,
-            max_completion_tokens=200,
-            messages=[{"role": "user", "content": prompt}],
-            temperature=0.1,
-        )
-        summary = resp.choices[0].message.content.strip()
-        if not summary:
-            # Model returned empty — fall back to raw excerpt
-            summary = content[:500]
-        print(f"   📝 Summary ({len(summary)} chars): {summary[:80]}...")
-        return summary
-    except Exception as e:
-        print(f"   ⚠️ Summarisation failed, storing truncated content: {e}")
-        return content[:500]
-
-
 def index_page(page_id: str, page_title: str, html_body: str) -> bool:
-    """Summarise, embed, and upsert a single page into confluence-kb.
-    - page_content stores the AI-generated summary (~500 chars) for lean prompt injection
-    - contentVector is embedded from the full text for accurate similarity search
+    """Embed and upsert a single page into confluence-kb.
+    Stores the full plain-text content so the AI has complete page details.
     """
     full_content = _html_to_plain(html_body).strip()[:MAX_PAGE_CHARS]
     if not full_content:
         print(f"    Empty content — skipping")
         return False
 
-    summary = _summarise_page(page_title, full_content)
+    print(f"   📄 Content ({len(full_content)} chars): {full_content[:80]}...")
 
     try:
-        # Embed full content for better vector quality
         vector = get_embedding(f"{page_title} {full_content}")
     except Exception as e:
         print(f"   Embedding error for '{page_title[:60]}': {e}")
@@ -191,8 +160,8 @@ def index_page(page_id: str, page_title: str, html_body: str) -> bool:
     document = {
         "id":            f"confluence-{page_id}",
         "page_name":     page_title,
-        "page_content":  summary,          # summary only — saves tokens at query time
-        "contentVector": vector,            # full-text embedding — keeps search accurate
+        "page_content":  full_content,
+        "contentVector": vector,
     }
 
     try:

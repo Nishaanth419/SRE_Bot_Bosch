@@ -209,12 +209,15 @@ def is_incident_message(text, subject=""):
         score += 1
 
     # Question-word penalty: require at least 1 incident keyword,
-    # otherwise questions like "how does argo work?" get misrouted
+    # otherwise questions like "how does argo work?" get misrouted.
+    # Extra-strong demotion when the message BODY is a single-line question
+    # (prevents subject keywords like "incident" in a bot name from misrouting).
     if _QUESTION_RE.search(text_lower):
+        is_single_line_question = "\n" not in text.strip()
         if incident_hits == 0:
-            score -= 2
+            score -= 3 if is_single_line_question else 2
         else:
-            score -= 1
+            score -= 2 if is_single_line_question else 1
 
     return score >= 2
 
