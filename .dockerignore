@@ -5,10 +5,13 @@ __pycache__/
 *.env
 .venv/
 .venv-1/
+.venv-wsl/
 venv/
 *.md
 chroma_store*/
 data/
 processed/
 tests/
+tools/
+k8s/
 .vscode/

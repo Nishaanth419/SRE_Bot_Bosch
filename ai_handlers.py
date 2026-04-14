@@ -3,10 +3,25 @@ import re
 from azure_config import ai_client, CHAT_MODEL
 from utils import build_content_parts, _strip_html, _shorten, parse_chat_history, trim_chat_history
 from github_grounding import _build_release_context
+from confluence_context import get_relevant_pages
 
 # ---------------------------------------------------------
 # 🧠 AI HANDLERS
 # ---------------------------------------------------------
+
+STACK_CONTEXT = """\
+⚙️ PLATFORM CONTEXT (apply to ALL commands and solutions):
+- Cloud Platform : Microsoft Azure
+- Orchestration  : Azure Kubernetes Service (AKS)
+- Workflows      : Algo Workflows
+- Azure Region   : West Europe (westeurope)
+
+When giving commands or solutions:
+- Use `az aks` commands scoped to the `westeurope` region where a location flag is required.
+- Assume kubectl targets an AKS cluster in West Europe.
+- Reference "Algo Workflows" (never "DLL-WORKFLOWS") when discussing workflow components.
+- Tailor namespace, resource-group, and cluster references to this stack where possible.
+"""
 
 def ask_ai_history_summary(query_text, matches):
     """Ask the AI to summarise patterns across matched past incidents."""
@@ -32,11 +47,13 @@ def ask_ai_history_summary(query_text, matches):
 
     combined_history = "\n".join(history_blocks)
 
+    kb_context = get_relevant_pages(query_text)
     system_prompt = """\
 You are a Senior SRE reviewing past incident records to help the user.
 
 The user asked about previous or similar incidents. You have matching records below.
 
+""" + STACK_CONTEXT + kb_context + """
 YOUR JOB:
 1. Summarize what happened in these past incidents — root causes, affected services, symptoms.
 2. Highlight what fixes were applied and whether they worked.
@@ -76,8 +93,10 @@ RULES:
 def ask_ai_incident(user_log, memory_data=None, base64_images=None):
     """Analyse an incident log and output a structured runbook."""
     print("🧠 AI Analyzing Incident...")
+    kb_context = get_relevant_pages(user_log)
     system_prompt = """You are a Senior Site Reliability Engineer and Incident Commander.
 
+""" + STACK_CONTEXT + kb_context + """
 The user has pasted an error log, alert, or failure message. Your job is to:
 1. **Diagnose** — read the log carefully, identify the EXACT root cause, and explain WHY this happened in plain language.
 2. **Fix** — provide a clear, step-by-step resolution with copy-pasteable commands.
@@ -141,18 +160,18 @@ _You should see:_ [describe healthy output]
             f"Past Fix: {past_diag}\n"
             f"Past Chat Context: {past_chat}\n"
             f"---------------------------------------\n\n"
-            f"CURRENT ERROR LOG:\n{user_log}\n\n"
+            f"CURRENT ERROR LOG:\n{_shorten(_strip_html(user_log), 3000)}\n\n"
             "Using the historical reference above, generate a clean runbook for the CURRENT error."
         )
     else:
-        user_content = f"CURRENT ERROR LOG:\n{user_log}"
+        user_content = f"CURRENT ERROR LOG:\n{_shorten(_strip_html(user_log), 3000)}"
 
     content_parts = build_content_parts(user_content, base64_images=base64_images)
 
     try:
         response = ai_client.chat.completions.create(
             model=CHAT_MODEL,
-            max_completion_tokens=4096,
+            max_completion_tokens=2048,
             messages=[
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": content_parts},
@@ -167,8 +186,10 @@ _You should see:_ [describe healthy output]
 def ask_ai_followup(user_question, log_context, chat_history_list, base64_images=None):
     """Handle a follow-up question inside an incident thread."""
     print("🧠 AI Thinking (Follow-up)...")
+    kb_context = get_relevant_pages(user_question)
     system_instruction = """You are a Senior SRE Bot continuing a conversation about an incident.
 
+""" + STACK_CONTEXT + kb_context + """
 The user is asking a follow-up question about an error they already shared. The original
 error log and previous conversation are provided below.
 
@@ -207,8 +228,10 @@ RULES:
 def ask_ai_general(user_message, chat_history_list=None, thread_context="", base64_images=None):
     """Handle general (non-incident) chat messages."""
     print("💬 AI Handling General Chat...")
+    kb_context = get_relevant_pages(user_message)
     system_prompt = """You are a helpful SRE and DevOps assistant.
 
+""" + STACK_CONTEXT + kb_context + """
 The user is asking a question — NOT reporting an incident. Answer their question directly.
 
 RULES:

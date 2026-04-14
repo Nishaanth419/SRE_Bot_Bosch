@@ -20,7 +20,7 @@ AZURE_SEARCH_ENDPOINT = os.getenv("AZURE_SEARCH_ENDPOINT")
 AZURE_SEARCH_INDEX = os.getenv("AZURE_SEARCH_INDEX", "sre-incidents")
 
 # 4. Configuration Constants
-CHAT_MODEL = os.getenv("CHAT_MODEL", "gpt-4.1-mini")
+CHAT_MODEL = os.getenv("CHAT_MODEL", "gpt-5.4-mini")
 EMBED_MODEL = os.getenv("EMBED_MODEL")
 
 # 5. Search Client Initialization (API key auth)

@@ -10,6 +10,7 @@ build/
 # Virtual environments
 .venv/
 .venv-1/
+.venv-wsl/
 venv/
 env/
 
@@ -30,6 +31,7 @@ Thumbs.db
 # Logs / reports
 *.log
 *.html
+tests/reports/
 chroma_store*/
 data/
 processed/

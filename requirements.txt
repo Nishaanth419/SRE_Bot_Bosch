@@ -5,3 +5,4 @@ azure-identity
 openai
 python-dotenv
 gunicorn
+beautifulsoup4

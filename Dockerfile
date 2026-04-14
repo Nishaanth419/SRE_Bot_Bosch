@@ -4,9 +4,8 @@ FROM python:3.11-slim
 # Force UTF-8 I/O — prevents UnicodeEncodeError with emoji in logs on any host
 ENV PYTHONUTF8=1
 
-# Tell Azure App Service which port the container listens on.
-# App Service also injects $PORT at runtime; startup.sh uses that value.
-ENV WEBSITES_PORT=8000
+# Port the app listens on (K8s targets this via the Service)
+ENV PORT=8000
 
 # Set working directory inside the container
 WORKDIR /app
@@ -27,7 +26,7 @@ COPY ai_handlers.py .
 COPY teams_poster.py .
 COPY orchestrator.py .
 COPY response_metrics.py .
-COPY Azure.env .
+# Azure.env is NOT copied — secrets are injected as env vars by Kubernetes
 COPY startup.sh .
 
 # Make startup script executable
